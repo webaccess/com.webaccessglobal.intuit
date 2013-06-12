@@ -1,7 +1,7 @@
 <?php
 
 require_once 'intuit.civix.php';
-
+require_once 'Intuitpayment.php';
 /**
  * Implementation of hook_civicrm_config
  */
@@ -131,7 +131,7 @@ function intuit_civicrm_managed(&$entities) {
       'name' => 'Intuit',
       'title' => 'Intuit',
       'description' => 'Intuit Payment Processor',
-      'class_name' => 'Payment_Intuit',
+      'class_name' => 'com.webaccessglobal.intuit',
       'billing_mode' => 'form',
       'user_name_label' => 'Application Login',
       'password_label' => 'Connection Ticket',

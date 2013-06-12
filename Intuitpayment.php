@@ -20,7 +20,7 @@
  */
 
 
-class CRM_Core_Payment_Intuit extends CRM_Core_Payment {
+class com_webaccessglobal_Intuit extends CRM_Core_Payment {
 
   static protected $_mode = null;
   static protected $_params = array();
@@ -297,7 +297,7 @@ class CRM_Core_Payment_Intuit extends CRM_Core_Payment {
   static function &singleton($mode, &$paymentProcessor) {
     $processorName = $paymentProcessor['name'];
     if (self::$_singleton[$processorName] === null) {
-      self::$_singleton[$processorName] = new CRM_Core_Payment_Intuit($mode, $paymentProcessor);
+      self::$_singleton[$processorName] = new com_webaccessglobal_Intuit($mode, $paymentProcessor);
     }
     return self::$_singleton[$processorName];
   }
@@ -389,8 +389,7 @@ class CRM_Core_Payment_Intuit extends CRM_Core_Payment {
     $trxn = & CRM_Core_BAO_FinancialTrxn::create($trxnParams);
   }
 
-  public function handlePaymentCron() {
-
+  public function handlePaymentCron(&$params) {
     $contributionStatus = CRM_Contribute_PseudoConstant::contributionStatus();
 
     $isTest = trim(CRM_Utils_Array::value('is_test', $_REQUEST));
@@ -403,9 +402,17 @@ class CRM_Core_Payment_Intuit extends CRM_Core_Payment {
       $pemFile = '/tmp/pems/intuit-test.pem';
     }
 
-    $processor_info = array('class_name' => 'Payment_Intuit',
-      'is_test' => $isTest);
-    CRM_Core_BAO_PaymentProcessor::retrieve($processor_info, $defaults);
+
+    /**
+     * Fix me as per civicrm versions
+     * In below 4.2 version 'CRM_Core_BAO_PaymentProcessor'
+     * */
+    $processor_info = array(
+      'class_name' => 'com.webaccessglobal.intuit',
+      'is_test' => $isTest
+    );
+    CRM_Financial_BAO_PaymentProcessor::retrieve($processor_info, $defaults);
+
     $AppLogin = $defaults['user_name'];
     $connTckt = $defaults['password'];
     $AppID = $defaults['signature'];
