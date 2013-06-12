@@ -1,7 +1,6 @@
 <?php
 
 require_once 'intuit.civix.php';
-require_once 'intuitpayment.php';
 
 /**
  * Implementation of hook_civicrm_config
@@ -29,11 +28,11 @@ function intuit_civicrm_install() {
     CRM_Core_DAO::executeQuery("
                 INSERT INTO civicrm_job (
                    id, domain_id, run_frequency, last_run, name, description,
-                   api_prefix, api_entity, api_action, parameters, is_active
+                   api_entity, api_action, parameters, is_active
                 ) VALUES (
                    NULL, %1, 'Daily', NULL, 'Process Intuit Recurring Payments',
                    'Processes any Intuit recurring payments that are due',
-                   'civicrm_api3', 'job', 'run_payment_cron', 'processor_name=Intuit', 0
+                   'job', 'run_payment_cron', 'processor_name=Intuit', 0
                 )
                 ", array(
       1 => array(CIVICRM_DOMAIN_ID, 'Integer')
