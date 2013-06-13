@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<extension key="com.webaccessglobal.intuit" type="module">
+  <file>intuit</file>
+  <name>Intuit</name>
+  <label>Intuit</label>
+  <description>Intuite Quickbooks payment processor for CiviCRM</description>
+  <license>AGPL</license>
+  <maintainer>
+    <author>Web Access</author>
+    <email>info@webaccessglobal.com</email>
+  </maintainer>
+  <releaseDate>2013-05-22</releaseDate>
+  <version>1.0</version>
+  <develStage>alpha</develStage>
+  <compatibility>
+    <ver>4.2</ver>
+    <ver>4.3</ver>
+  </compatibility>
+  <comments>This is a new, undeveloped module</comments>
+  <civix>
+    <namespace>CRM</namespace>
+  </civix>
+</extension>
