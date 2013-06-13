@@ -389,7 +389,11 @@ class com_webaccessglobal_Intuit extends CRM_Core_Payment {
     $trxn = & CRM_Core_BAO_FinancialTrxn::create($trxnParams);
   }
 
-  public function handlePaymentCron(&$params) {
+  /**
+   * Extention Cron link call by handlePaymentCron
+   * http://<YourDomain>/sites/all/modules/civicrm/bin/cron?job=run_payment_cron&is_test=<Istest?>&processor_name=Intuit&name=<Username>&pass=<Password>&key=<Your Site Key>
+   */
+  public function handlePaymentCron() {
     $contributionStatus = CRM_Contribute_PseudoConstant::contributionStatus();
 
     $isTest = trim(CRM_Utils_Array::value('is_test', $_REQUEST));
