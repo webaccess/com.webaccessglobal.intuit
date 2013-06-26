@@ -1,12 +1,6 @@
 <?php
+require_once 'config.intuit.php';
 
-/*
- * Copyright (C) 2010
- * Licensed to CiviCRM under the Academic Free License version 3.0.
- *
- * Written and contributed by Parvez Husain (http://www.parvez.me)
- *
- */
 
 /**
  *
@@ -396,8 +390,7 @@ class com_webaccessglobal_Intuit extends CRM_Core_Payment {
     $contributionStatus = CRM_Contribute_PseudoConstant::contributionStatus();
 
     $isTest = (trim(CRM_Utils_Array::value('is_test', $_REQUEST))) ? 1 : 0;
-
-    ($isTest) ? $this->_setParam('pemFile', PROD_PEM) : $this->_setParam('pemFile', TEST_PEM);
+    $pemFile =  ($isTest) ? TEST_PEM : PROD_PEM;
 
     /**
      * Fix me as per civicrm versions
@@ -409,13 +402,13 @@ class com_webaccessglobal_Intuit extends CRM_Core_Payment {
     );
     CRM_Financial_BAO_PaymentProcessor::retrieve($processor_info, $defaults);
 
-    list($code, $message, $PHP_SessionTicket) = $this->checkSignon($defaults['user_name'], $defaults['password'], $defaults['url_site'], $this->_getParam('pemFile'));
+    list($code, $message, $PHP_SessionTicket) = $this->checkSignon($defaults['user_name'], $defaults['password'], $defaults['url_site'], $pemFile);
 
     if ($code != "0") {
       return self::error($code, $message);
     }
 
-  
+
     $recurContribution = "
     SELECT  recur.id, recur.frequency_unit, recur.frequency_interval, recur.payment_instrument_id,recur.contribution_type_id,recur.contribution_status_id,
             recur.installments, recur.start_date, recur.trxn_id, recur.processor_id, recur.invoice_id, recur.cancel_date, recur.amount,
