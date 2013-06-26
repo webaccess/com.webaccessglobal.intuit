@@ -14,9 +14,9 @@ You need to set the cron link for recurring contribution in crontab as follows.
 
  eg: 
 
- For Test: http://YourDomain/sites/all/modules/civicrm/bin/cron?job=run_payment_cron&is_test=<Istest?>&processor_name=Intuit&name=Username&pass=Password&key=Your Site Key
+ For Test: http://YourDomain/sites/all/modules/civicrm/bin/cron?job=run_intuit_cron&is_test=<Istest?>&processor_name=Intuit&name=Username&pass=Password&key=Your Site Key
 
- For Live: http://YourDomain/sites/all/modules/civicrm/bin/cron?job=run_payment_cron&processor_name=Intuit&name=Username&pass=Password&key=Your Site Key
+ For Live: http://YourDomain/sites/all/modules/civicrm/bin/cron?job=run_intuit_cron&processor_name=Intuit&name=Username&pass=Password&key=Your Site Key
 
 For more info check : http://wiki.civicrm.org/confluence/display/CRMDOC41/Managing+Scheduled+Jobs
  
