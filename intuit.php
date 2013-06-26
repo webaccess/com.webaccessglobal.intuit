@@ -24,26 +24,6 @@ function intuit_civicrm_xmlMenu(&$files) {
  * Implementation of hook_civicrm_install
  */
 function intuit_civicrm_install() {
-
-  // Create entry in civicrm_job table for cron call
-  /**
-   * Fix for 4.2 add 'api_prefix' column name after 'descritipn' column with value 'civicrm_api3'
-   * */
-  if (CRM_Core_DAO::checkTableExists('civicrm_job'))
-    CRM_Core_DAO::executeQuery("
-                INSERT INTO civicrm_job (
-                   id, domain_id, run_frequency, last_run, name, description,
-                   api_entity, api_action, parameters, is_active
-                ) VALUES (
-                   NULL, %1, 'Daily', NULL, 'Process Intuit Recurring Payments',
-                   'Processes any Intuit recurring payments that are due',
-                   'job', 'run_intuit_cron', 'processor_name=Intuit', 0
-                )
-                ", array(
-      1 => array(CIVICRM_DOMAIN_ID, 'Integer')
-        )
-    );
-
   return _intuit_civix_civicrm_install();
 }
 
@@ -57,9 +37,8 @@ function intuit_civicrm_uninstall() {
    * change CRM_Financial_DAO_PaymentProcessorType with CRM_Core_DAO_PaymentProcessorType
    * Aleter where condition payment_processor_type = 'Intuit'
    * */
-  $intuitID = CRM_Core_DAO::getFieldValue('CRM_Financial_DAO_PaymentProcessorType', 'name', 'id', 'Intuit');
+  $intuitID = CRM_Core_DAO::getFieldValue('CRM_Financial_DAO_PaymentProcessorType', 'Intuit', 'id', 'name');
   if ($intuitID) {
-    CRM_Core_DAO::executeQuery("DELETE  FROM civicrm_job where api_action = 'run_intuit_cron'");
     CRM_Core_DAO::executeQuery("DELETE  FROM civicrm_payment_processor where payment_processor_type_id =" . $intuitID);
     $affectedRows = mysql_affected_rows();
 
@@ -82,7 +61,7 @@ function intuit_civicrm_enable() {
    * change CRM_Financial_DAO_PaymentProcessorType with CRM_Core_DAO_PaymentProcessorType
    * Aleter where condition payment_processor_type = 'Intuit'
    * */
-  $intuitID = CRM_Core_DAO::getFieldValue('CRM_Financial_DAO_PaymentProcessorType', 'name', 'id', 'Intuit');
+  $intuitID = CRM_Core_DAO::getFieldValue('CRM_Financial_DAO_PaymentProcessorType', 'Intuit', 'id', 'name');
   if ($intuitID) {
     CRM_Core_DAO::executeQuery("UPDATE civicrm_payment_processor SET is_active = 1 where payment_processor_type_id =" . $intuitID);
     $affectedRows = mysql_affected_rows();
@@ -105,7 +84,7 @@ function intuit_civicrm_disable() {
    * change CRM_Financial_DAO_PaymentProcessorType with CRM_Core_DAO_PaymentProcessorType
    * Aleter where condition payment_processor_type = 'Intuit'
    * */
-  $intuitID = CRM_Core_DAO::getFieldValue('CRM_Financial_DAO_PaymentProcessorType', 'name', 'id', 'Intuit');
+  $intuitID = CRM_Core_DAO::getFieldValue('CRM_Financial_DAO_PaymentProcessorType', 'Intuit', 'id', 'name');
   if ($intuitID) {
     CRM_Core_DAO::executeQuery("UPDATE civicrm_payment_processor SET is_active = 0 where payment_processor_type_id =" . $intuitID);
     $affectedRows = mysql_affected_rows();
@@ -140,7 +119,7 @@ function intuit_civicrm_upgrade($op, CRM_Queue_Queue $queue = NULL) {
  */
 function intuit_civicrm_managed(&$entities) {
 
-  $entities[] = array(
+  $entities[0] = array(
     'module' => 'com.webaccessglobal.intuit',
     'name' => 'Intuit',
     'entity' => 'PaymentProcessorType',
@@ -159,6 +138,22 @@ function intuit_civicrm_managed(&$entities) {
       'is_recur' => 1,
       'payment_type' => 1,
     ),
+  );
+ $entities[1] =
+      array(
+        'name' => 'IntuitCron',
+        'entity' => 'Job',
+        'module' => 'com.webaccessglobal.intuit',
+        'params' =>
+        array(
+          'version' => 3,
+          'name' => 'IntuitCron',
+          'description' => 'Processes any Intuit recurring payments that are due',
+          'run_frequency' => 'Daily',
+          'api_entity' => 'job',
+          'api_action' => 'run_payment_cron',
+          'parameters' => 'processor_name=Intuit',
+        ),
   );
 
   return _intuit_civix_civicrm_managed($entities);
