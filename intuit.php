@@ -2,6 +2,8 @@
 
 require_once 'intuit.civix.php';
 require_once 'Intuitpayment.php';
+require_once 'config.intuit.php';
+
 /**
  * Implementation of hook_civicrm_config
  */
@@ -24,6 +26,9 @@ function intuit_civicrm_xmlMenu(&$files) {
 function intuit_civicrm_install() {
 
   // Create entry in civicrm_job table for cron call
+  /**
+   * Fix for 4.2 add 'api_prefix' column name after 'descritipn' column with value 'civicrm_api3'
+   * */
   if (CRM_Core_DAO::checkTableExists('civicrm_job'))
     CRM_Core_DAO::executeQuery("
                 INSERT INTO civicrm_job (
@@ -32,7 +37,7 @@ function intuit_civicrm_install() {
                 ) VALUES (
                    NULL, %1, 'Daily', NULL, 'Process Intuit Recurring Payments',
                    'Processes any Intuit recurring payments that are due',
-                   'job', 'run_payment_cron', 'processor_name=Intuit', 0
+                   'job', 'run_intuit_cron', 'processor_name=Intuit', 0
                 )
                 ", array(
       1 => array(CIVICRM_DOMAIN_ID, 'Integer')
@@ -47,16 +52,22 @@ function intuit_civicrm_install() {
  */
 function intuit_civicrm_uninstall() {
 
-  CRM_Core_DAO::executeQuery("DELETE pp FROM civicrm_payment_processor pp
-RIGHT JOIN  civicrm_payment_processor_type ppt ON ppt.id = pp.payment_processor_type_id
-WHERE ppt.name = 'Intuit'");
+  /**
+   * Fix for 4.2
+   * change CRM_Financial_DAO_PaymentProcessorType with CRM_Core_DAO_PaymentProcessorType
+   * Aleter where condition payment_processor_type = 'Intuit'
+   * */
+  $intuitID = CRM_Core_DAO::getFieldValue('CRM_Financial_DAO_PaymentProcessorType', 'name', 'id', 'Intuit');
+  if ($intuitID) {
+    CRM_Core_DAO::executeQuery("DELETE  FROM civicrm_job where api_action = 'run_intuit_cron'");
+    CRM_Core_DAO::executeQuery("DELETE  FROM civicrm_payment_processor where payment_processor_type_id =" . $intuitID);
+    $affectedRows = mysql_affected_rows();
 
-  $affectedRows = mysql_affected_rows();
-
-  if ($affectedRows)
-    CRM_Core_Session::setStatus("Intuit Payment Processor Message:
-    <br />Entries for Intuit hosted Payment Processor are now Deleted!
+    if ($affectedRows)
+      CRM_Core_Session::setStatus("Intuit Payment Processor Message:
+    <br />Entries for Intuit Payment Processor are now Deleted!
     <br />");
+  }
 
   return _intuit_civix_civicrm_uninstall();
 }
@@ -66,17 +77,21 @@ WHERE ppt.name = 'Intuit'");
  */
 function intuit_civicrm_enable() {
 
-  CRM_Core_DAO::executeQuery("UPDATE civicrm_payment_processor pp
-RIGHT JOIN  civicrm_payment_processor_type ppt ON ppt.id = pp.payment_processor_type_id
-SET pp.is_active = 1
-WHERE ppt.name = 'Intuit'");
+   /**
+   * Fix for 4.2
+   * change CRM_Financial_DAO_PaymentProcessorType with CRM_Core_DAO_PaymentProcessorType
+   * Aleter where condition payment_processor_type = 'Intuit'
+   * */
+  $intuitID = CRM_Core_DAO::getFieldValue('CRM_Financial_DAO_PaymentProcessorType', 'name', 'id', 'Intuit');
+  if ($intuitID) {
+    CRM_Core_DAO::executeQuery("UPDATE civicrm_payment_processor SET is_active = 1 where payment_processor_type_id =" . $intuitID);
+    $affectedRows = mysql_affected_rows();
 
-  $affectedRows = mysql_affected_rows();
-
-  if ($affectedRows)
-    CRM_Core_Session::setStatus("Intuit Payment Processor Message:
-    <br />Entries for Intuit hosted Payment Processor are now Enabled!
-    <br />");
+    if ($affectedRows)
+      CRM_Core_Session::setStatus("Intuit Payment Processor Message:
+      <br />Entries for Intuit hosted Payment Processor are now Enabled!
+       <br />");
+  }
 
   return _intuit_civix_civicrm_enable();
 }
@@ -85,18 +100,21 @@ WHERE ppt.name = 'Intuit'");
  * Implementation of hook_civicrm_disable
  */
 function intuit_civicrm_disable() {
+  /**
+   * Fix for 4.2
+   * change CRM_Financial_DAO_PaymentProcessorType with CRM_Core_DAO_PaymentProcessorType
+   * Aleter where condition payment_processor_type = 'Intuit'
+   * */
+  $intuitID = CRM_Core_DAO::getFieldValue('CRM_Financial_DAO_PaymentProcessorType', 'name', 'id', 'Intuit');
+  if ($intuitID) {
+    CRM_Core_DAO::executeQuery("UPDATE civicrm_payment_processor SET is_active = 0 where payment_processor_type_id =" . $intuitID);
+    $affectedRows = mysql_affected_rows();
 
-  CRM_Core_DAO::executeQuery("UPDATE civicrm_payment_processor pp
-RIGHT JOIN  civicrm_payment_processor_type ppt ON ppt.id = pp.payment_processor_type_id
-SET pp.is_active = 0
-WHERE ppt.name = 'Intuit'");
-
-  $affectedRows = mysql_affected_rows();
-
-  if ($affectedRows)
-    CRM_Core_Session::setStatus("Intuit Payment Processor Message:
-    <br />Entries for Intuit hosted Payment Processor are now Disabled!
-    <br />");
+    if ($affectedRows)
+      CRM_Core_Session::setStatus("Intuit Payment Processor Message:
+       <br />Entries for Intuit hosted Payment Processor are now Disabled!
+       <br />");
+  }
 
   return _intuit_civix_civicrm_disable();
 }

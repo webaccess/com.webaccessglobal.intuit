@@ -53,12 +53,6 @@ class com_webaccessglobal_Intuit extends CRM_Core_Payment {
     $this->_setParam('connectionTicket', $paymentProcessor['password']);
     $this->_setParam('applicationID', $paymentProcessor['signature']);
     $this->_setParam('applicationURL', $paymentProcessor['url_site']);
-    if ($this->_mode == 'live') {
-      $this->_setParam('pemFile', '/tmp/pems/intuit.pem');
-    }
-    else {
-      $this->_setParam('pemFile', '/tmp/pems/intuit-test.pem');
-    }
   }
 
   /**
@@ -91,187 +85,6 @@ class com_webaccessglobal_Intuit extends CRM_Core_Payment {
     else {
       return null;
     }
-  }
-
-  /**
-   * Submit an Automated Recurring Billing subscription
-   *
-   * @param  array $params assoc array of input parameters for this transaction
-   * @return array the result in a nice formatted array (or an error object)
-   * @public
-   */
-  function doDirectPayment(&$params) {
-
-    if (!defined('CURLOPT_SSLCERT')) {
-      return self::error(9001, 'Intuit Quickbooks requires curl with SSL support');
-    }
-
-    foreach ($params as $field => $value) {
-      $this->_setParam($field, $value);
-    }
-
-    $PHP_QBMSXML[0] = '<?xml version="1.0" ?>
-        <?qbmsxml version="4.5"?>
-        <QBMSXML>
-        <SignonMsgsRq>
-        <SignonAppCertRq>
-        <ClientDateTime>' . date('Y-m-d\TH:i:s') . '</ClientDateTime>
-        <ApplicationLogin>' . $this->_getParam('applicationLogin') . '</ApplicationLogin>
-        <ConnectionTicket>' . $this->_getParam('connectionTicket') . '</ConnectionTicket>
-        </SignonAppCertRq>
-        </SignonMsgsRq>
-        </QBMSXML>';
-
-    // submit to intuit
-    $gatewayUrl = $this->_getParam('applicationURL');
-    $response = $this->sendToIntuit($gatewayUrl, $PHP_QBMSXML[0], $this->_getParam('pemFile'));
-
-    //Go ahead and get the session ticket
-    //Find the location of the start tag
-    $PHP_TempString = strstr($response, "<SessionTicket>");
-    $PHP_EndLocation = strpos($PHP_TempString, "</SessionTicket>");
-    $PHP_SessionTicket = substr($PHP_TempString, 15, $PHP_EndLocation - 15);
-
-    if ($params['is_recur'] == 1) {
-      $PHP_QBMSXML[1] = '<?xml version="1.0"?>
-          <?qbmsxml version="4.5"?>
-          <QBMSXML>
-          <SignonMsgsRq>
-           <SignonTicketRq>
-            <ClientDateTime>' . date('Y-m-d\TH:i:s') . '</ClientDateTime>
-            <SessionTicket>' . $PHP_SessionTicket . '</SessionTicket>
-           </SignonTicketRq>
-          </SignonMsgsRq>
-          <QBMSXMLMsgsRq>
-           <CustomerCreditCardWalletAddRq>
-               <CustomerID>Customer-' . $params['contactID'] . '</CustomerID>
-               <CreditCardNumber>' . $this->_getParam('credit_card_number') . '</CreditCardNumber>
-               <ExpirationMonth>' . str_pad($this->_getParam('month'), 2, '0', STR_PAD_LEFT) . '</ExpirationMonth>
-               <ExpirationYear>' . $this->_getParam('year') . '</ExpirationYear>
-               <NameOnCard>' . $this->_getParam('billing_first_name') . ' ' . $this->_getParam('billing_last_name') . '</NameOnCard>
-               <CreditCardAddress>' . $this->_getParam('street_address') . '</CreditCardAddress>
-               <CreditCardPostalCode>' . $this->_getParam('postal_code') . '</CreditCardPostalCode>
-          </CustomerCreditCardWalletAddRq>
-         </QBMSXMLMsgsRq>
-         </QBMSXML>';
-
-      $response = $this->sendToIntuit($gatewayUrl, $PHP_QBMSXML[1], $this->_getParam('pemFile'));
-
-      //Go ahead and get the Wallet ID
-      //Find the location of the start tag
-      $PHP_TempString = strstr($response, "<WalletEntryID>");
-      $PHP_EndLocation = strpos($PHP_TempString, "</WalletEntryID>");
-      $PHP_WalletId = substr($PHP_TempString, 15, $PHP_EndLocation - 15);
-      $PHP_TempString = strstr($response, "<IsDuplicate>");
-      $PHP_EndLocation = strpos($PHP_TempString, "</IsDuplicate>");
-      $PHP_DuplWallet = substr($PHP_TempString, 13, $PHP_EndLocation - 13);
-      if ($PHP_DuplWallet == 'true') {
-        $params['invoice_id'] = $PHP_WalletId . '-' . rand();
-      }
-      else {
-        $params['invoice_id'] = $PHP_WalletId;
-      }
-
-      $tomorrow = date('Y-m-d', mktime(0, 0, 0, date("m"), date("d") + 1, date("Y")));
-      if ($params['frequency_unit'] == 'day') {
-        $freqInterval = $params['frequency_interval'];
-      }
-      else if ($params['frequency_unit'] == 'week') {
-        if ($params['frequency_interval']) {
-          $interval = $params['frequency_interval'] * 7;
-        }
-        else {
-          $interval = 7;
-        }
-        $freqInterval = $interval;
-      }
-      else if ($params['frequency_unit'] == 'month') {
-        $d = date("d") + 1;
-        $freqInterval = "0 0 0 " . $d . " * ?";
-      }
-      else if ($params['frequency_unit'] == 'year') {
-        $d = date("d") + 1;
-        $freqInterval = "0 0 0 " . $d . " " . date("m") . " ?";
-      }
-
-      $PHP_QBMSXML[2] = '<?xml version="1.0"?>
-        <?qbmsxml version="4.5"?>
-        <QBMSXML>
-        <SignonMsgsRq>
-         <SignonTicketRq>
-          <ClientDateTime>' . date('Y-m-d\TH:i:s') . '</ClientDateTime>
-          <SessionTicket>' . $PHP_SessionTicket . '</SessionTicket>
-         </SignonTicketRq>
-        </SignonMsgsRq>
-        <QBMSXMLMsgsRq>
-         <CustomerScheduledBillingAddRq>
-           <CustomerID>Customer-' . $params['contactID'] . '</CustomerID>
-           <WalletEntryID>' . $PHP_WalletId . '</WalletEntryID>
-           <PaymentType>CreditCard</PaymentType>
-           <Amount>' . $this->_getParam('amount') . '</Amount>
-           <StartDate>' . $tomorrow . '</StartDate>
-           <FrequencyExpression>' . $freqInterval . '</FrequencyExpression>
-           <ScheduledBillingStatus>Active</ScheduledBillingStatus>
-         </CustomerScheduledBillingAddRq>
-        </QBMSXMLMsgsRq>
-        </QBMSXML>';
-
-      $response = $this->sendToIntuit($gatewayUrl, $PHP_QBMSXML[2], $this->_getParam('pemFile'));
-
-      //Go ahead and get the session ticket
-      //Find the location of the start tag
-      $PHP_TempString = strstr($response, "<ScheduledBillingID>");
-      $PHP_EndLocation = strpos($PHP_TempString, "</ScheduledBillingID>");
-      $PHP_ScheduleBillId = substr($PHP_TempString, 20, $PHP_EndLocation - 20);
-
-      $params['processor_id'] = $PHP_ScheduleBillId;
-      $params['trxn_id'] = $PHP_ScheduleBillId;
-      self::processRecurContribution($component = 'contribute', $params);
-      $recur = new CRM_Contribute_DAO_ContributionRecur( );
-      $recur->id = $params['contributionRecurID'];
-      $recur->find(true);
-      $subscriptionPaymentStatus = 'START';
-      CRM_Contribute_BAO_ContributionPage::recurringNofify($subscriptionPaymentStatus, $params['contactID'], $params['contributionPageID'], $recur);
-    }
-    else {
-      $PHP_QBMSXML[1] = '<?xml version="1.0" ?>
-        <?qbmsxml version="4.5"?>
-        <QBMSXML>
-        <SignonMsgsRq>
-        <SignonTicketRq>
-        <ClientDateTime>' . date('Y-m-d\TH:i:s') . '</ClientDateTime>
-        <SessionTicket>' . $PHP_SessionTicket . '</SessionTicket>
-        </SignonTicketRq>
-        </SignonMsgsRq>
-        <QBMSXMLMsgsRq>
-        <CustomerCreditCardChargeRq>
-        <TransRequestID>' . $this->_getParam('invoiceID') . '</TransRequestID>
-        <CreditCardNumber>' . $this->_getParam('credit_card_number') . '</CreditCardNumber>
-        <ExpirationMonth>' . str_pad($this->_getParam('month'), 2, '0', STR_PAD_LEFT) . '</ExpirationMonth>
-        <ExpirationYear>' . $this->_getParam('year') . '</ExpirationYear>
-        <IsECommerce>true</IsECommerce>
-        <Amount>' . $this->_getParam('amount') . '</Amount>
-        <NameOnCard>' . $this->_getParam('billing_first_name') . ' ' . $this->_getParam('billing_last_name') . '</NameOnCard>
-        <CreditCardAddress>' . $this->_getParam('street_address') . '</CreditCardAddress>
-        <CreditCardPostalCode>' . $this->_getParam('postal_code') . '</CreditCardPostalCode>
-        <CommercialCardCode></CommercialCardCode>
-        <SalesTaxAmount>0.00</SalesTaxAmount>
-        <CardSecurityCode>' . $this->_getParam('cvv2') . '</CardSecurityCode>
-        </CustomerCreditCardChargeRq>
-        </QBMSXMLMsgsRq>
-        </QBMSXML>';
-
-      // submit to intuit
-      $response = $this->sendToIntuit($gatewayUrl, $PHP_QBMSXML[1], $this->_getParam('pemFile'));
-
-      $xml = simplexml_load_string($response);
-      if ($xml->QBMSXMLMsgsRs->CustomerCreditCardChargeRs['statusCode'] != "0") {
-        return self::error($xml->QBMSXMLMsgsRs->CustomerCreditCardChargeRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerCreditCardChargeRs['statusMessage']);
-      }
-
-      $params['trxn_id'] = (string) $xml->QBMSXMLMsgsRs->CustomerCreditCardChargeRs->CreditCardTransID;
-    }
-    return $params;
   }
 
   /**
@@ -328,6 +141,192 @@ class com_webaccessglobal_Intuit extends CRM_Core_Payment {
     else {
       $this->_params[$field] = $value;
     }
+  }
+
+  /**
+   * Submit an Automated Recurring Billing subscription
+   *
+   * @param  array $params assoc array of input parameters for this transaction
+   * @return array the result in a nice formatted array (or an error object)
+   * @public
+   */
+  function doDirectPayment(&$params) {
+
+    if (!defined('CURLOPT_SSLCERT')) {
+      return self::error(9001, 'Intuit Quickbooks requires curl with SSL support');
+    }
+
+    if (empty($this->_mode)) {
+      $this->_mode = $this->_paymentForm->_mode;
+    }
+
+    //Load pem file as per mode
+    ($this->_mode == 'live') ? $this->_setParam('pemFile', PROD_PEM) : $this->_setParam('pemFile', TEST_PEM);
+
+    foreach ($params as $field => $value) {
+      $this->_setParam($field, $value);
+    }
+
+    $amount = CRM_Utils_Money::format($this->_getParam('amount'), null, null, true);
+
+    list($code, $message, $PHP_SessionTicket) = $this->checkSignon($this->_getParam('applicationLogin'), $this->_getParam('connectionTicket'), $this->_getParam('applicationURL'), $this->_getParam('pemFile'));
+
+    if ($code != "0") {
+      return self::error($code, $message);
+    }
+
+    if ($params['is_recur'] == 1) {
+      $WalletAddXML = '<?xml version="1.0"?>
+          <?qbmsxml version="4.5"?>
+          <QBMSXML>
+          <SignonMsgsRq>
+           <SignonTicketRq>
+            <ClientDateTime>' . date('Y-m-d\TH:i:s') . '</ClientDateTime>
+            <SessionTicket>' . $PHP_SessionTicket . '</SessionTicket>
+           </SignonTicketRq>
+          </SignonMsgsRq>
+          <QBMSXMLMsgsRq>
+           <CustomerCreditCardWalletAddRq>
+               <CustomerID>Customer-' . $params['contactID'] . '</CustomerID>
+               <CreditCardNumber>' . $this->_getParam('credit_card_number') . '</CreditCardNumber>
+               <ExpirationMonth>' . str_pad($this->_getParam('month'), 2, '0', STR_PAD_LEFT) . '</ExpirationMonth>
+               <ExpirationYear>' . $this->_getParam('year') . '</ExpirationYear>
+               <NameOnCard>' . $this->_getParam('billing_first_name') . ' ' . $this->_getParam('billing_last_name') . '</NameOnCard>
+               <CreditCardAddress>' . $this->_getParam('street_address') . '</CreditCardAddress>
+               <CreditCardPostalCode>' . $this->_getParam('postal_code') . '</CreditCardPostalCode>
+          </CustomerCreditCardWalletAddRq>
+         </QBMSXMLMsgsRq>
+         </QBMSXML>';
+
+      $response = $this->sendToIntuit($this->_getParam('applicationURL'), $WalletAddXML, $this->_getParam('pemFile'));
+      CRM_Core_Error::debug_var('$WalletAddXML', $response);
+
+      $xml = simplexml_load_string($response);
+      if ($xml->QBMSXMLMsgsRs->CustomerCreditCardWalletAddRs['statusCode'] != "0") {
+        return self::error($xml->QBMSXMLMsgsRs->CustomerCreditCardWalletAddRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerCreditCardWalletAddRs['statusMessage']);
+      }
+
+      //Go ahead and get the Wallet ID
+      //Find the location of the start tag
+      $PHP_TempString = strstr($response, "<WalletEntryID>");
+      $PHP_EndLocation = strpos($PHP_TempString, "</WalletEntryID>");
+      $PHP_WalletId = substr($PHP_TempString, 15, $PHP_EndLocation - 15);
+
+      $PHP_TempString = strstr($response, "<IsDuplicate>");
+      $PHP_EndLocation = strpos($PHP_TempString, "</IsDuplicate>");
+      $PHP_DuplWallet = substr($PHP_TempString, 13, $PHP_EndLocation - 13);
+      if ($PHP_DuplWallet == 'true') {
+        $params['invoice_id'] = $PHP_WalletId . '-' . rand();
+      }
+      else {
+        $params['invoice_id'] = $PHP_WalletId;
+      }
+
+      $tomorrow = date('Y-m-d', mktime(0, 0, 0, date("m"), date("d") + 1, date("Y")));
+      if ($params['frequency_unit'] == 'day') {
+        $freqInterval = $params['frequency_interval'];
+      }
+      else if ($params['frequency_unit'] == 'week') {
+        if ($params['frequency_interval']) {
+          $interval = $params['frequency_interval'] * 7;
+        }
+        else {
+          $interval = 7;
+        }
+        $freqInterval = $interval;
+      }
+      else if ($params['frequency_unit'] == 'month') {
+        $d = date("d") + 1;
+        $freqInterval = "0 0 0 " . $d . " * ?";
+      }
+      else if ($params['frequency_unit'] == 'year') {
+        $d = date("d") + 1;
+        $freqInterval = "0 0 0 " . $d . " " . date("m") . " ?";
+      }
+
+      $BillingAdd = '<?xml version="1.0"?>
+        <?qbmsxml version="4.5"?>
+        <QBMSXML>
+        <SignonMsgsRq>
+         <SignonTicketRq>
+          <ClientDateTime>' . date('Y-m-d\TH:i:s') . '</ClientDateTime>
+          <SessionTicket>' . $PHP_SessionTicket . '</SessionTicket>
+         </SignonTicketRq>
+        </SignonMsgsRq>
+        <QBMSXMLMsgsRq>
+         <CustomerScheduledBillingAddRq>
+           <CustomerID>Customer-' . $params['contactID'] . '</CustomerID>
+           <WalletEntryID>' . $PHP_WalletId . '</WalletEntryID>
+           <PaymentType>CreditCard</PaymentType>
+           <Amount>' . $amount . '</Amount>
+           <StartDate>' . $tomorrow . '</StartDate>
+           <FrequencyExpression>' . $freqInterval . '</FrequencyExpression>
+           <ScheduledBillingStatus>Active</ScheduledBillingStatus>
+         </CustomerScheduledBillingAddRq>
+        </QBMSXMLMsgsRq>
+        </QBMSXML>';
+
+      $response = $this->sendToIntuit($this->_getParam('applicationURL'), $BillingAdd, $this->_getParam('pemFile'));
+      CRM_Core_Error::debug_var('$response', $response);
+
+      $xml = simplexml_load_string($response);
+      if ($xml->QBMSXMLMsgsRs->CustomerScheduledBillingAddRs['statusCode'] != "0") {
+        return self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingAddRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingAddRs['statusMessage']);
+      }
+
+      //Go ahead and get the session ticket
+      //Find the location of the start tag
+      $PHP_TempString = strstr($response, "<ScheduledBillingID>");
+      $PHP_EndLocation = strpos($PHP_TempString, "</ScheduledBillingID>");
+      $PHP_ScheduleBillId = substr($PHP_TempString, 20, $PHP_EndLocation - 20);
+
+      $params['processor_id'] = $PHP_ScheduleBillId;
+      $params['trxn_id'] = $PHP_ScheduleBillId;
+      self::processRecurContribution($component = 'contribute', $params);
+      $recur = new CRM_Contribute_DAO_ContributionRecur( );
+      $recur->id = $params['contributionRecurID'];
+      $recur->find(true);
+      CRM_Contribute_BAO_ContributionPage::recurringNotify('START', $params['contactID'], $params['contributionPageID'], $recur);
+    }
+    else {
+      $CreditCardCharge = '<?xml version="1.0" ?>
+        <?qbmsxml version="4.5"?>
+        <QBMSXML>
+        <SignonMsgsRq>
+        <SignonTicketRq>
+        <ClientDateTime>' . date('Y-m-d\TH:i:s') . '</ClientDateTime>
+        <SessionTicket>' . $PHP_SessionTicket . '</SessionTicket>
+        </SignonTicketRq>
+        </SignonMsgsRq>
+        <QBMSXMLMsgsRq>
+        <CustomerCreditCardChargeRq>
+        <TransRequestID>' . $this->_getParam('invoiceID') . '</TransRequestID>
+        <CreditCardNumber>' . $this->_getParam('credit_card_number') . '</CreditCardNumber>
+        <ExpirationMonth>' . str_pad($this->_getParam('month'), 2, '0', STR_PAD_LEFT) . '</ExpirationMonth>
+        <ExpirationYear>' . $this->_getParam('year') . '</ExpirationYear>
+        <IsECommerce>true</IsECommerce>
+        <Amount>' . $amount . '</Amount>
+        <NameOnCard>' . $this->_getParam('billing_first_name') . ' ' . $this->_getParam('billing_last_name') . '</NameOnCard>
+        <CreditCardAddress>' . $this->_getParam('street_address') . '</CreditCardAddress>
+        <CreditCardPostalCode>' . $this->_getParam('postal_code') . '</CreditCardPostalCode>
+        <CommercialCardCode></CommercialCardCode>
+        <SalesTaxAmount>0.00</SalesTaxAmount>
+        <CardSecurityCode>' . $this->_getParam('cvv2') . '</CardSecurityCode>
+        </CustomerCreditCardChargeRq>
+        </QBMSXMLMsgsRq>
+        </QBMSXML>';
+
+      // submit to intuit
+      $response = $this->sendToIntuit($this->_getParam('applicationURL'), $CreditCardCharge, $this->_getParam('pemFile'));
+      CRM_Core_Error::debug_var('$CreditCardCharge', $response);
+      $xml = simplexml_load_string($response);
+      if ($xml->QBMSXMLMsgsRs->CustomerCreditCardChargeRs['statusCode'] != "0") {
+        return self::error($xml->QBMSXMLMsgsRs->CustomerCreditCardChargeRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerCreditCardChargeRs['statusMessage']);
+      }
+
+      $params['trxn_id'] = (string) $xml->QBMSXMLMsgsRs->CustomerCreditCardChargeRs->CreditCardTransID;
+    }
+    return $params;
   }
 
   /**
@@ -396,16 +395,9 @@ class com_webaccessglobal_Intuit extends CRM_Core_Payment {
   public function handlePaymentCron() {
     $contributionStatus = CRM_Contribute_PseudoConstant::contributionStatus();
 
-    $isTest = trim(CRM_Utils_Array::value('is_test', $_REQUEST));
+    $isTest = (trim(CRM_Utils_Array::value('is_test', $_REQUEST))) ? 1 : 0;
 
-    if (!$isTest) {
-      $isTest = 0;
-      $pemFile = '/tmp/pems/intuit.pem';
-    }
-    else {
-      $pemFile = '/tmp/pems/intuit-test.pem';
-    }
-
+    ($isTest) ? $this->_setParam('pemFile', PROD_PEM) : $this->_setParam('pemFile', TEST_PEM);
 
     /**
      * Fix me as per civicrm versions
@@ -417,12 +409,13 @@ class com_webaccessglobal_Intuit extends CRM_Core_Payment {
     );
     CRM_Financial_BAO_PaymentProcessor::retrieve($processor_info, $defaults);
 
-    $AppLogin = $defaults['user_name'];
-    $connTckt = $defaults['password'];
-    $AppID = $defaults['signature'];
-    $gatewayUrl = $appUrl = $defaults['url_site'];
+    list($code, $message, $PHP_SessionTicket) = $this->checkSignon($defaults['user_name'], $defaults['password'], $defaults['url_site'], $this->_getParam('pemFile'));
 
-    $today = date('Y-m-d');
+    if ($code != "0") {
+      return self::error($code, $message);
+    }
+
+  
     $recurContribution = "
     SELECT  recur.id, recur.frequency_unit, recur.frequency_interval, recur.payment_instrument_id,recur.contribution_type_id,recur.contribution_status_id,
             recur.installments, recur.start_date, recur.trxn_id, recur.processor_id, recur.invoice_id, recur.cancel_date, recur.amount,
@@ -431,6 +424,7 @@ class com_webaccessglobal_Intuit extends CRM_Core_Payment {
 INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution_recur_id
        AND  recur.is_test = %1
        AND  contri.contribution_status_id = 1
+       AND recur.contribution_status_id NOT IN ( 3, 1 )
        AND  recur.payment_processor_id = %2 )
   GROUP BY  contri.contribution_recur_id";
 
@@ -438,58 +432,33 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
       2 => array($defaults['id'], 'Integer'));
 
     $recurResult = CRM_Core_DAO::executeQuery($recurContribution, $queryParams);
-    $i = 0;
-
-    $PHP_QBMSXML[0] = '<?xml version="1.0" ?>
-        <?qbmsxml version="4.5"?>
-        <QBMSXML>
-        <SignonMsgsRq>
-        <SignonAppCertRq>
-        <ClientDateTime>' . date('Y-m-d\TH:i:s') . '</ClientDateTime>
-        <ApplicationLogin>' . $AppLogin . '</ApplicationLogin>
-        <ConnectionTicket>' . $connTckt . '</ConnectionTicket>
-        </SignonAppCertRq>
-        </SignonMsgsRq>
-        </QBMSXML>';
-
-    // submit to intuit
-    $response = self::sendToIntuit($gatewayUrl, $PHP_QBMSXML[0], $pemFile);
-
-    //Go ahead and get the session ticket
-    //Find the location of the start tag
-    $PHP_TempString = strstr($response, "<SessionTicket>");
-    $PHP_EndLocation = strpos($PHP_TempString, "</SessionTicket>");
-    $PHP_SessionTicket = substr($PHP_TempString, 15, $PHP_EndLocation - 15);
 
     while ($recurResult->fetch()) {
       $firstParams = self::getParams($recurResult->trxn_id);
       $nCount = $recurResult->count_id;
       $freqInstall = $recurResult->installments;
 
-      $i++;
-      $details = array();
-      $address = array();
+      $details = $address = array();
       $todays_date = date("Y-m-d");
       $today = strtotime($todays_date);
-      $expiration_date = strtotime($recurResult->cancel_date);
-      if ((($recurResult->contribution_status_id == 3) && isset($expiration_date) && ($expiration_date == $today)) || ($freqInstall == $nCount && $recurResult->contribution_status_id == 2)) {
+      if ($freqInstall == $nCount && $recurResult->contribution_status_id == 2) {
         $wallet[0] = $recurResult->invoice_id;
-
+        $contriParams = $firstParams;
         if (strstr($recurResult->invoice_id, '-')) {
           $wallet = explode('-', $recurResult->invoice_id);
         }
         else {
           $wallet[0] = $recurResult->invoice_id;
         }
-        $PHP_QBMSXML[1] = '<?xml version="1.0"?>
+        $WalletDel = '<?xml version="1.0"?>
         <?qbmsxml version="4.5"?>
+        <QBMSXML>
         <SignonMsgsRq>
         <SignonTicketRq>
         <ClientDateTime>' . date('Y-m-d\TH:i:s') . '</ClientDateTime>
         <SessionTicket>' . $PHP_SessionTicket . '</SessionTicket>
         </SignonTicketRq>
         </SignonMsgsRq>
-        <QBMSXML>
         <QBMSXMLMsgsRq>
         <CustomerCreditCardWalletDelRq>
         <WalletEntryID >' . $wallet[0] . '</WalletEntryID>
@@ -502,8 +471,17 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
         </QBMSXMLMsgsRq>
         </QBMSXML>';
 
-        $response = self::sendToIntuit($gatewayUrl, $PHP_QBMSXML[1], $pemFile);
+        $response = self::sendToIntuit($defaults['url_site'], $WalletDel, $pemFile);
+        CRM_Core_Error::debug_var('$WalletDel', $response);
+
         $xml = simplexml_load_string($response);
+
+        if ($xml->QBMSXMLMsgsRs->CustomerCreditCardWalletDelRs['statusCode'] != "0") {
+          return self::error($xml->QBMSXMLMsgsRs->CustomerCreditCardWalletDelRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerCreditCardWalletDelRs['statusMessage']);
+        }
+        if ($xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusCode'] != "0") {
+          return self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusMessage']);
+        }
 
         $recurResult1 = CRM_Contribute_BAO_ContributionRecur::getRecurContributions($contriParams['contact_id']);
         $array = $recurResult1;
@@ -514,17 +492,15 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
         foreach ($array[$id] as $key => $value) {
           $object->$key = $value;
         }
-        if ($recurResult->contribution_status_id == 3) {
-          $completed['contribution_status_id'] = array_search('Cancelled', $contributionStatus);
-        }
-        elseif ($recurResult->contribution_status_id == 2) {
-          $completed['contribution_status_id'] = array_search('Completed', $contributionStatus);
-        }
+
+        $completed = array_search('Completed', $contributionStatus);
         CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_ContributionRecur', $recurResult->id, 'contribution_status_id', $completed);
-        CRM_Contribute_BAO_ContributionPage::recurringNofify(CRM_Core_Payment::RECURRING_PAYMENT_END, $contriParams['contact_id'], $contriParams['contribution_page_id'], $object, false);
+
+        CRM_Contribute_BAO_ContributionPage::recurringNotify(CRM_Core_Payment::RECURRING_PAYMENT_END, $contriParams['contact_id'], $contriParams['contribution_page_id'], $object, false);
       }
       elseif (($freqInstall > $nCount) && ($recurResult->contribution_status_id == 2)) {
-        $PHP_QBMSXML[1] = '<?xml version="1.0"?>
+
+        $BillingPayment = '<?xml version="1.0"?>
         <?qbmsxml version="4.5"?>
         <QBMSXML>
         <SignonMsgsRq>
@@ -547,15 +523,28 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
         </QBMSXMLMsgsRq>
         </QBMSXML>';
 
-        $response = self::sendToIntuit($gatewayUrl, $PHP_QBMSXML[1], $pemFile);
-        $xml = simplexml_load_string($response);
-        $recurXml = get_object_vars($xml->QBMSXMLMsgsRs->CustomerScheduledBillingPaymentQueryRs);
-        $recurPayments = $recurXml['ScheduledBillingPayment'];
+        $response = self::sendToIntuit($defaults['url_site'], $BillingPayment, $pemFile);
+        CRM_Core_Error::debug_var('$BillingPayment', $response);
 
-        if (is_array($recurXml['ScheduledBillingPayment'])) {
-          foreach ($recurPayments as $recurKey) {
+        $xml = simplexml_load_string($response);
+        if ($xml->QBMSXMLMsgsRs->CustomerScheduledBillingPaymentQueryRs['statusCode'] != "0") {
+          return self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingPaymentQueryRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingPaymentQueryRs['statusMessage']);
+        }
+
+        $sheduleBillingResult = self::_parseXML($response);
+        $recurPayments = array();
+        if (!is_array($sheduleBillingResult['CustomerScheduledBillingPaymentQueryRs']['ScheduledBillingPayment'])) {
+          $recurPayments['ScheduledBillingPayment'][] = $sheduleBillingResult['CustomerScheduledBillingPaymentQueryRs']['ScheduledBillingPayment'];
+        }
+        else {
+          $recurPayments['ScheduledBillingPayment'] = $sheduleBillingResult['CustomerScheduledBillingPaymentQueryRs']['ScheduledBillingPayment'];
+        }
+
+        if (!empty($recurPayments['ScheduledBillingPayment'])) {
+          foreach ($recurPayments['ScheduledBillingPayment'] as $recurKey => $recurValue) {
+            $recurValue = get_object_vars($recurValue);
             $contri['contact_id'] = $contriParams['contact_id'] = $firstParams['contact_id'];
-            $contriParams['total_amount'] = $recurKey->Amount;
+            $contriParams['total_amount'] = $recurValue['Amount'];
             $contriParams['address_id'] = $firstParams['address_id'];
             $contriParams['contribution_source'] = $firstParams['contribution_source'];
             $contriParams['source'] = $firstParams['source'];
@@ -563,7 +552,7 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
             $contriParams['contribution_page_id'] = $firstParams['contribution_page_id'];
             $contriParams['payment_instrument_id'] = $firstParams['payment_instrument_id'];
             $contriParams['contribution_recur_id'] = $firstParams['contribution_recur_id'];
-            if ($recurKey->ResultStatusCode == 0) {
+            if ($recurValue['ResultStatusCode'] == 0) {
               $contriParams['contribution_status_id'] = array_search('Completed', $contributionStatus);
             }
             else {
@@ -572,9 +561,10 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
             }
             $contriParams['currency'] = $firstParams['currency'];
             $contriParams['is_test'] = $firstParams['is_test'];
-            $contriParams['receive_date'] = $recurKey->PaymentDate;
-            $contri['trxn_id'] = $contriParams['trxn_id'] = $recurKey->ScheduledBillingPaymentID;
+            $contriParams['receive_date'] = $recurValue['PaymentDate'];
+            $contri['trxn_id'] = $contriParams['trxn_id'] = $recurValue['ScheduledBillingPaymentID'];
             $contribution = CRM_Contribute_BAO_Contribution::retrieve($contri, $null);
+
             if (!$contribution->id) {
               $contribution = CRM_Contribute_BAO_Contribution::create($contriParams, $null);
               $trxnParams = array(
@@ -586,12 +576,13 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
                 'net_amount' => CRM_Utils_Array::value('net_amount', $contriParams['trxn_id'], $contriParams['total_amount']),
                 'currency' => $contribution->currency,
                 'payment_processor' => $defaults['name'],
-                'trxn_id' => $contriparams['trxn_id'],
+                'trxn_id' => $contriParams['trxn_id'],
                 'trxn_result_code' => NULL,
               );
               $trxn = & CRM_Core_BAO_FinancialTrxn::create($trxnParams);
             }
-            if (( date('Y-m-d', strtotime($count, strtotime($recurKey->PaymentDate))) == $today) && ($recurKey->ResultStatusCode == 0) && ($contribution->thankyou_date == NULL)) {
+
+            if (( date('Y-m-d', strtotime($count, strtotime($recurValue['PaymentDate']))) <= $today) && ($recurValue['ResultStatusCode'] == 0) && ($contribution->thankyou_date == NULL)) {
               self::contribution_receipt($contriParams, $firstParams, $contribution->id);
             }
           }
@@ -610,7 +601,7 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
           $contriParams['is_test'] = $firstParams['is_test'];
           $contribution = CRM_Contribute_BAO_Contribution::retrieve($contriParams, $null);
           $nCount = 0;
-          if (!( date('Y-m-d', strtotime($count, strtotime($recurKey->PaymentDate))) <= $today)) {
+          if (!( date('Y-m-d', strtotime($count, strtotime($recurValue['PaymentDate']))) <= $today)) {
 
             CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_Contribution', $contribution->id, 'receive_date', $recurPayments->PaymentDate);
             CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_Contribution', $contribution->id, 'contribution_status_id', $recurVal['ResultStatusCode']);
@@ -618,9 +609,10 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
             self::contribution_receipt($contriParams, $firstParams, $contribution->id);
           }
         }
+
         if ($freqInstall == $nCount + 1) {
 
-          $PHP_QBMSXML[2] = '<?xml version="1.0"?>
+          $ScheduledBillingQuery = '<?xml version="1.0"?>
         <?qbmsxml version="4.5"?>
         <QBMSXML>
         <SignonMsgsRq>
@@ -646,8 +638,17 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
         </CustomerScheduledBillingDelRq>
         </QBMSXMLMsgsRq>
         </QBMSXML>';
-          $response = self::sendToIntuit($gatewayUrl, $PHP_QBMSXML[2], $pemFile);
+          $response = self::sendToIntuit($defaults['url_site'], $ScheduledBillingQuery, $pemFile);
+          CRM_Core_Error::debug_var('$ScheduledBillingQuery', $response);
+
           $xml = simplexml_load_string($response);
+          if ($xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusCode'] != "0") {
+            return self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusMessage']);
+          }
+
+          if ($xml->QBMSXMLMsgsRs->CustomerScheduledBillingQueryRs['statusCode'] != "0") {
+            return self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingQueryRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingQueryRs['statusMessage']);
+          }
 
           $recurResult1 = CRM_Contribute_BAO_ContributionRecur::getRecurContributions($contriParams['contact_id']);
           $array = $recurResult1;
@@ -660,10 +661,10 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
             $object->$key = $value;
           }
 
-          $completed['contribution_status_id'] = array_search('Completed', $contributionStatus);
+          $completed = array_search('Completed', $contributionStatus);
           CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_ContributionRecur', $recurResult->id, 'contribution_status_id', $completed);
 
-          CRM_Contribute_BAO_ContributionPage::recurringNofify(CRM_Core_Payment::RECURRING_PAYMENT_END, $firstParams['contact_id'], $firstParams['contribution_page_id'], $object, false);
+          CRM_Contribute_BAO_ContributionPage::recurringNotify(CRM_Core_Payment::RECURRING_PAYMENT_END, $firstParams['contact_id'], $firstParams['contribution_page_id'], $object, false);
         }
       }
     }
@@ -735,6 +736,120 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
 
     CRM_Contribute_BAO_ContributionPage::sendMail($contriParams['contact_id'], $values, $isTest, $returnMessageText = false);
     CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_Contribution', $contributionid, 'thankyou_date', $today);
+  }
+
+  static function _parseXML($response) {
+    $xmlObj = (array) simplexml_load_string($response);
+    if (array_key_exists('SignonMsgsRs', $xmlObj)) {
+      foreach ((array) $xmlObj['SignonMsgsRs'] as $signKey => $signValue) {
+        foreach ((array) $signValue as $index => $value)
+          $signResult[$index] = ( is_object($value) ) ? $value : $value;
+        $result['SignonMsgsRs'] = $signResult;
+      }
+    }
+    if (array_key_exists('QBMSXMLMsgsRs', $xmlObj)) {
+      foreach ((array) $xmlObj['QBMSXMLMsgsRs'] as $qbmsKey => $qbmsValue) {
+        foreach ((array) $qbmsValue as $index => $value)
+          $qbmsResult[$index] = ( is_object($value) ) ? $value : $value;
+        $result[$qbmsKey] = $qbmsResult;
+      }
+    }
+
+    return $result;
+  }
+
+  function checkSignon($appLogin, $conTicket, $url, $pem) {
+
+    $SignonXML = '<?xml version="1.0" ?>
+        <?qbmsxml version="4.5"?>
+        <QBMSXML>
+        <SignonMsgsRq>
+        <SignonAppCertRq>
+        <ClientDateTime>' . date('Y-m-d\TH:i:s') . '</ClientDateTime>
+        <ApplicationLogin>' . $appLogin . '</ApplicationLogin>
+        <ConnectionTicket>' . $conTicket . '</ConnectionTicket>
+        </SignonAppCertRq>
+        </SignonMsgsRq>
+        </QBMSXML>';
+
+    // submit to intuit
+    $response = $this->sendToIntuit($url, $SignonXML, $pem);
+    CRM_Core_Error::debug_var('$SignonXML', $response);
+    $xml = simplexml_load_string($response);
+
+    $statusCode = (array) $xml->SignonMsgsRs->SignonAppCertRs['statusCode'];
+    $statusMessage = (array) $xml->SignonMsgsRs->SignonAppCertRs['statusMessage'];
+    $statusMessage = (!empty($statusMessage)) ? $statusMessage[0] : '';
+    //Go ahead and get the session ticket
+    //Find the location of the start tag
+    $PHP_TempString = strstr($response, "<SessionTicket>");
+    $PHP_EndLocation = strpos($PHP_TempString, "</SessionTicket>");
+    $sessionTicket = substr($PHP_TempString, 15, $PHP_EndLocation - 15);
+
+    return array($statusCode[0], $statusMessage, $sessionTicket);
+  }
+
+  function cancelSubscription(&$message = '', $params = array()) {
+
+    $processID = CRM_Utils_Array::value('subscriptionId', $params);
+
+    $recurParams = array();
+    $recurDAO = new CRM_Contribute_DAO_ContributionRecur();
+    $recurDAO->processor_id = $processID;
+    $recurDAO->find();
+
+    $pemFile = ($this->_mode == 'live') ? PROD_PEM : TEST_PEM;
+    CRM_Core_Error::debug_var('$mode' , $this->_mode);
+
+    list($code, $message, $PHP_SessionTicket) = $this->checkSignon($this->_params['applicationLogin'], $this->_params['connectionTicket'], $this->_params['applicationURL'], $pemFile);
+
+    if ($code != "0") {
+      return self::error($code, $message);
+    }
+
+    while ($recurDAO->fetch()) {
+
+      $wallet[0] = $recurDAO->invoice_id;
+      if (strstr($recurDAO->invoice_id, '-')) {
+        $wallet = explode('-', $recurDAO->invoice_id);
+      }
+      else {
+        $wallet[0] = $recurDAO->invoice_id;
+      }
+
+      $QBMSXML = '<?xml version="1.0"?>
+        <?qbmsxml version="4.5"?>
+        <QBMSXML>
+        <SignonMsgsRq>
+        <SignonTicketRq>
+        <ClientDateTime>' . date('Y-m-d\TH:i:s') . '</ClientDateTime>
+        <SessionTicket>' . $PHP_SessionTicket . '</SessionTicket>
+        </SignonTicketRq>
+        </SignonMsgsRq>
+        <QBMSXMLMsgsRq>
+        <CustomerCreditCardWalletDelRq>
+        <WalletEntryID >' . $wallet[0] . '</WalletEntryID>
+        <CustomerID >Customer-' . $recurDAO->contact_id . '</CustomerID>
+        </CustomerCreditCardWalletDelRq>
+        <CustomerScheduledBillingDelRq>
+        <ScheduledBillingID >' . $processID . '</ScheduledBillingID>
+        <CustomerID >Customer-' . $recurDAO->contact_id . '</CustomerID>
+        </CustomerScheduledBillingDelRq>
+        </QBMSXMLMsgsRq>
+        </QBMSXML>';
+
+      $response = self::sendToIntuit($this->_params['applicationURL'], $QBMSXML, $pemFile);
+      CRM_Core_Error::debug_var('$QBMSXML', $response);
+
+      $xml = simplexml_load_string($response);
+      if ($xml->QBMSXMLMsgsRs->CustomerCreditCardWalletDelRs['statusCode'] != "0") {
+        return self::error($xml->QBMSXMLMsgsRs->CustomerCreditCardWalletDelRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerCreditCardWalletDelRs['statusMessage']);
+      }
+      if ($xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusCode'] != "0") {
+        return self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusMessage']);
+      }
+    }
+    return TRUE;
   }
 
 }
