@@ -1,6 +1,13 @@
 <?php
-require_once 'config.intuit.php';
 
+require_once 'config.intuit.php';
+/*
+ * Copyright (C) 2010
+ * Licensed to CiviCRM under the Academic Free License version 3.0.
+ *
+ * Written and contributed by Parvez Husain (http://www.parvez.me)
+ *
+ */
 
 /**
  *
@@ -363,9 +370,11 @@ class com_webaccessglobal_Intuit extends CRM_Core_Payment {
     $completed['contribution_status_id'] = array_search('Completed', $contributionStatus);
 
     CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_Contribution', $params['contributionID'], 'trxn_id', $params['trxn_id']);
-    CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_Contribution', $params['contributionID'], 'contribution_status_id', $completed);
+    CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_Contribution', $params['contributionID'], 'invoice_id', $params['invoice_id']);
+   // CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_Contribution', $params['contributionID'], 'contribution_status_id', $completed);
 
     CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_ContributionRecur', $params['contributionRecurID'], 'processor_id', $params['processor_id']);
+    CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_ContributionRecur', $params['contributionRecurID'], 'trxn_id', $params['trxn_id']);
     CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_ContributionRecur', $params['contributionRecurID'], 'invoice_id', $params['invoice_id']);
     $trxnParams = array(
       'contribution_id' => $params['contributionID'],
@@ -390,7 +399,8 @@ class com_webaccessglobal_Intuit extends CRM_Core_Payment {
     $contributionStatus = CRM_Contribute_PseudoConstant::contributionStatus();
 
     $isTest = (trim(CRM_Utils_Array::value('is_test', $_REQUEST))) ? 1 : 0;
-    $pemFile =  ($isTest) ? TEST_PEM : PROD_PEM;
+
+    $pemFile = ($isTest) ? TEST_PEM : PROD_PEM;
 
     /**
      * Fix me as per civicrm versions
@@ -400,26 +410,38 @@ class com_webaccessglobal_Intuit extends CRM_Core_Payment {
       'class_name' => 'com.webaccessglobal.intuit',
       'is_test' => $isTest
     );
-    CRM_Financial_BAO_PaymentProcessor::retrieve($processor_info, $defaults);
+    CRM_Core_BAO_PaymentProcessor::retrieve($processor_info, $defaults);
 
+    $gatewayUrl = $appUrl = $defaults['url_site'];
     list($code, $message, $PHP_SessionTicket) = $this->checkSignon($defaults['user_name'], $defaults['password'], $defaults['url_site'], $pemFile);
 
     if ($code != "0") {
       return self::error($code, $message);
     }
 
-
-    $recurContribution = "
+    $today = date('Y-m-d');
+   /* $recurContribution = "
     SELECT  recur.id, recur.frequency_unit, recur.frequency_interval, recur.payment_instrument_id,recur.contribution_type_id,recur.contribution_status_id,
             recur.installments, recur.start_date, recur.trxn_id, recur.processor_id, recur.invoice_id, recur.cancel_date, recur.amount,
             count( contri.contribution_recur_id ) as count_id
       FROM  civicrm_contribution contri
-INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution_recur_id
+RIGHT JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution_recur_id
        AND  recur.is_test = %1
        AND  contri.contribution_status_id = 1
        AND recur.contribution_status_id NOT IN ( 3, 1 )
        AND  recur.payment_processor_id = %2 )
   GROUP BY  contri.contribution_recur_id";
+  */
+  $recurContribution = "
+    SELECT recur.id, recur.frequency_unit, recur.frequency_interval, recur.payment_instrument_id, recur.contribution_type_id, recur.contribution_status_id, recur.installments, recur.start_date, recur.trxn_id, recur.processor_id, recur.invoice_id, recur.cancel_date, recur.amount, count( contri.contribution_recur_id )  AS count_id
+FROM civicrm_contribution_recur recur
+LEFT  JOIN civicrm_contribution contri ON ( recur.id = contri.contribution_recur_id
+AND contri.contribution_status_id =1  )
+AND recur.is_test =%1
+AND recur.contribution_status_id NOT
+IN ( 3, 1  )
+AND recur.payment_processor_id =%2
+GROUP  BY recur.id";
 
     $queryParams = array(1 => array($isTest, 'Integer'),
       2 => array($defaults['id'], 'Integer'));
@@ -427,7 +449,9 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
     $recurResult = CRM_Core_DAO::executeQuery($recurContribution, $queryParams);
 
     while ($recurResult->fetch()) {
-      $firstParams = self::getParams($recurResult->trxn_id);
+      CRM_Core_Error::debug_var('$recurResult', $recurResult);
+      $firstParams = self::getParams($recurResult->invoice_id);
+     
       $nCount = $recurResult->count_id;
       $freqInstall = $recurResult->installments;
 
@@ -464,16 +488,16 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
         </QBMSXMLMsgsRq>
         </QBMSXML>';
 
-        $response = self::sendToIntuit($defaults['url_site'], $WalletDel, $pemFile);
+        $response = self::sendToIntuit($gatewayUrl, $WalletDel, $pemFile);
         CRM_Core_Error::debug_var('$WalletDel', $response);
 
         $xml = simplexml_load_string($response);
 
         if ($xml->QBMSXMLMsgsRs->CustomerCreditCardWalletDelRs['statusCode'] != "0") {
-          return self::error($xml->QBMSXMLMsgsRs->CustomerCreditCardWalletDelRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerCreditCardWalletDelRs['statusMessage']);
+           self::error($xml->QBMSXMLMsgsRs->CustomerCreditCardWalletDelRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerCreditCardWalletDelRs['statusMessage']);
         }
         if ($xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusCode'] != "0") {
-          return self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusMessage']);
+           self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusMessage']);
         }
 
         $recurResult1 = CRM_Contribute_BAO_ContributionRecur::getRecurContributions($contriParams['contact_id']);
@@ -491,7 +515,7 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
 
         CRM_Contribute_BAO_ContributionPage::recurringNotify(CRM_Core_Payment::RECURRING_PAYMENT_END, $contriParams['contact_id'], $contriParams['contribution_page_id'], $object, false);
       }
-      elseif (($freqInstall > $nCount) && ($recurResult->contribution_status_id == 2)) {
+      elseif ((empty($freqInstall)|| $freqInstall == NULL ||($freqInstall > $nCount)) && ($recurResult->contribution_status_id == 2)) {
 
         $BillingPayment = '<?xml version="1.0"?>
         <?qbmsxml version="4.5"?>
@@ -516,15 +540,16 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
         </QBMSXMLMsgsRq>
         </QBMSXML>';
 
-        $response = self::sendToIntuit($defaults['url_site'], $BillingPayment, $pemFile);
+        $response = self::sendToIntuit($gatewayUrl, $BillingPayment, $pemFile);
         CRM_Core_Error::debug_var('$BillingPayment', $response);
 
         $xml = simplexml_load_string($response);
         if ($xml->QBMSXMLMsgsRs->CustomerScheduledBillingPaymentQueryRs['statusCode'] != "0") {
-          return self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingPaymentQueryRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingPaymentQueryRs['statusMessage']);
+           self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingPaymentQueryRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingPaymentQueryRs['statusMessage']);
         }
 
         $sheduleBillingResult = self::_parseXML($response);
+
         $recurPayments = array();
         if (!is_array($sheduleBillingResult['CustomerScheduledBillingPaymentQueryRs']['ScheduledBillingPayment'])) {
           $recurPayments['ScheduledBillingPayment'][] = $sheduleBillingResult['CustomerScheduledBillingPaymentQueryRs']['ScheduledBillingPayment'];
@@ -533,28 +558,55 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
           $recurPayments['ScheduledBillingPayment'] = $sheduleBillingResult['CustomerScheduledBillingPaymentQueryRs']['ScheduledBillingPayment'];
         }
 
-        if (!empty($recurPayments['ScheduledBillingPayment'])) {
-          foreach ($recurPayments['ScheduledBillingPayment'] as $recurKey => $recurValue) {
-            $recurValue = get_object_vars($recurValue);
-            $contri['contact_id'] = $contriParams['contact_id'] = $firstParams['contact_id'];
+        $recureIdwise = array();
+        foreach ($recurPayments['ScheduledBillingPayment'] as $key => $value) {
+          $data = get_object_vars($value);
+          !empty($data) ? $recureIdwise[$data['ScheduledBillingPaymentID']] = $data : '';
+        }
+        ksort($recureIdwise);
+        if (!empty($recureIdwise)) {
+          $contriParams['contact_id'] = $firstParams['contact_id'];
+          $contriParams['address_id'] = $firstParams['address_id'];
+          $contriParams['contribution_source'] = $firstParams['contribution_source'];
+          $contriParams['source'] = $firstParams['source'];
+          $contriParams['contribution_type_id'] = $firstParams['contribution_type_id'];
+          $contriParams['contribution_page_id'] = $firstParams['contribution_page_id'];
+          $contriParams['payment_instrument_id'] = $firstParams['payment_instrument_id'];
+          $contriParams['contribution_recur_id'] = $firstParams['contribution_recur_id'];
+          $contriParams['currency'] = $firstParams['currency'];
+          $contriParams['is_test'] = $firstParams['is_test'];
+          $payCount = 1;
+          foreach ($recureIdwise as $recurKey => $recurValue) {
             $contriParams['total_amount'] = $recurValue['Amount'];
-            $contriParams['address_id'] = $firstParams['address_id'];
-            $contriParams['contribution_source'] = $firstParams['contribution_source'];
-            $contriParams['source'] = $firstParams['source'];
-            $contriParams['contribution_type_id'] = $firstParams['contribution_type_id'];
-            $contriParams['contribution_page_id'] = $firstParams['contribution_page_id'];
-            $contriParams['payment_instrument_id'] = $firstParams['payment_instrument_id'];
-            $contriParams['contribution_recur_id'] = $firstParams['contribution_recur_id'];
+            $contriParams['receive_date'] = CRM_Utils_Date::isoToMysql($recurValue['PaymentDate']);
+
             if ($recurValue['ResultStatusCode'] == 0) {
               $contriParams['contribution_status_id'] = array_search('Completed', $contributionStatus);
             }
             else {
               $contriParams['contribution_status_id'] = array_search('Failed', $contributionStatus);
-              CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_ContributionRecur', $recurResult->id, 'contribution_status_id', $completed);
+              //CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_ContributionRecur', $recurResult->id, 'contribution_status_id', $completed);
             }
-            $contriParams['currency'] = $firstParams['currency'];
-            $contriParams['is_test'] = $firstParams['is_test'];
-            $contriParams['receive_date'] = $recurValue['PaymentDate'];
+
+            if ($payCount == 1) {
+              $contri['trxn_id'] = $recurValue['ScheduledBillingID'];
+              $contribution = CRM_Contribute_BAO_Contribution::retrieve($contri, $null);
+              if ($contribution->id) {
+                $contribution->receive_date = $contriParams['receive_date'];
+                $contribution->contribution_status_id = $contriParams['contribution_status_id'];
+                $contribution->trxn_id = $recurValue['ScheduledBillingPaymentID'];
+          
+                $contribution->save();
+                $payCount++;
+                if (!empty($firstParams['address_id'])) {
+                  self::contribution_receipt($contriParams, $firstParams, $contribution->id);
+                }
+                CRM_Core_Error::debug_var('process complete', $contribution->id);
+               //	continue;
+              }
+              $payCount++;
+            }
+
             $contri['trxn_id'] = $contriParams['trxn_id'] = $recurValue['ScheduledBillingPaymentID'];
             $contribution = CRM_Contribute_BAO_Contribution::retrieve($contri, $null);
 
@@ -572,38 +624,18 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
                 'trxn_id' => $contriParams['trxn_id'],
                 'trxn_result_code' => NULL,
               );
-              $trxn = & CRM_Core_BAO_FinancialTrxn::create($trxnParams);
-            }
 
-            if (( date('Y-m-d', strtotime($count, strtotime($recurValue['PaymentDate']))) <= $today) && ($recurValue['ResultStatusCode'] == 0) && ($contribution->thankyou_date == NULL)) {
+              $trxn = & CRM_Core_BAO_FinancialTrxn::create($trxnParams);
+              $nCount++;
+            }
+            if (!empty($firstParams['address_id']) && ( date('Y-m-d', strtotime($count, strtotime($recurValue['PaymentDate']))) <= $today) && ($recurValue['ResultStatusCode'] == 0) && ($contribution->thankyou_date == NULL)) {
               self::contribution_receipt($contriParams, $firstParams, $contribution->id);
             }
-          }
-        }
-        elseif (isset($recurPayments) && !empty($recurPayments)) {
-          $contriParams['contact_id'] = $firstParams['contact_id'];
-          $contriParams['total_amount'] = $recurPayments->Amount;
-          $contriParams['address_id'] = $firstParams['address_id'];
-          $contriParams['contribution_source'] = $firstParams['contribution_source'];
-          $contriParams['source'] = $firstParams['source'];
-          $contriParams['contribution_type_id'] = $firstParams['contribution_type_id'];
-          $contriParams['contribution_page_id'] = $firstParams['contribution_page_id'];
-          $contriParams['payment_instrument_id'] = $firstParams['payment_instrument_id'];
-          $contriParams['contribution_recur_id'] = $firstParams['contribution_recur_id'];
-          $contriParams['currency'] = $firstParams['currency'];
-          $contriParams['is_test'] = $firstParams['is_test'];
-          $contribution = CRM_Contribute_BAO_Contribution::retrieve($contriParams, $null);
-          $nCount = 0;
-          if (!( date('Y-m-d', strtotime($count, strtotime($recurValue['PaymentDate']))) <= $today)) {
-
-            CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_Contribution', $contribution->id, 'receive_date', $recurPayments->PaymentDate);
-            CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_Contribution', $contribution->id, 'contribution_status_id', $recurVal['ResultStatusCode']);
-            CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_Contribution', $contribution->id, 'trxn_id', $recurPayments->ScheduledBillingPaymentID);
-            self::contribution_receipt($contriParams, $firstParams, $contribution->id);
+            CRM_Core_Error::debug_var('process complete', $contribution->id);
           }
         }
 
-        if ($freqInstall == $nCount + 1) {
+        if ($freqInstall <= $nCount && (!empty($freqInstall)|| $freqInstall != NULL)) {
 
           $ScheduledBillingQuery = '<?xml version="1.0"?>
         <?qbmsxml version="4.5"?>
@@ -631,16 +663,16 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
         </CustomerScheduledBillingDelRq>
         </QBMSXMLMsgsRq>
         </QBMSXML>';
-          $response = self::sendToIntuit($defaults['url_site'], $ScheduledBillingQuery, $pemFile);
+          $response = self::sendToIntuit($gatewayUrl, $ScheduledBillingQuery, $pemFile);
           CRM_Core_Error::debug_var('$ScheduledBillingQuery', $response);
 
           $xml = simplexml_load_string($response);
           if ($xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusCode'] != "0") {
-            return self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusMessage']);
+             self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusMessage']);
           }
 
           if ($xml->QBMSXMLMsgsRs->CustomerScheduledBillingQueryRs['statusCode'] != "0") {
-            return self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingQueryRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingQueryRs['statusMessage']);
+             self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingQueryRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingQueryRs['statusMessage']);
           }
 
           $recurResult1 = CRM_Contribute_BAO_ContributionRecur::getRecurContributions($contriParams['contact_id']);
@@ -663,32 +695,31 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
     }
   }
 
-  function getParams($trid) {
-    CRM_Core_DAO::commonRetrieveAll('CRM_Contribute_DAO_Contribution', 'invoice_id', $trid, $details, NULL);
-
+  function getParams($invoiceID) {
+    CRM_Core_DAO::commonRetrieveAll('CRM_Contribute_DAO_Contribution', 'invoice_id', $invoiceID, $details, NULL);
+    $params = array();
     foreach ($details as $key => $value) {
-
-      $params = array('contact_id' => $value['contact_id'],
-        'contribution_type_id' => $value['contribution_type_id'],
-        'contribution_page_id' => $value['contribution_page_id'],
-        'payment_instrument_id' => $value['payment_instrument_id'],
-        'contribution_recur_id' => $value['contribution_recur_id'],
-        'total_amount' => $value['total_amount'],
-        'trxn_id' => $value['trxn_id'],
-        'address_id' => $value['address_id'],
-        'source' => $value['source'],
-        'contribution_source' => $value['contribution_source'],
-        'non_deductible_amount' => $value['non_deductible_amount'],
-        'contribution_page_id' => $value['contribution_page_id'],
-        'currency' => $value['currency'],
-        'is_test' => $value['is_test'],
-        'is_pay_later' => $value['is_pay_later'],);
+     
+        $params = array('contact_id' => $value['contact_id'],
+          'contribution_type_id' => $value['contribution_type_id'],
+          'contribution_page_id' => $value['contribution_page_id'],
+          'payment_instrument_id' => $value['payment_instrument_id'],
+          'contribution_recur_id' => $value['contribution_recur_id'],
+          'total_amount' => $value['total_amount'],
+          'trxn_id' => $value['trxn_id'],
+          'address_id' => $value['address_id'],
+          'source' => $value['source'],
+          'contribution_source' => $value['contribution_source'],
+          'non_deductible_amount' => $value['non_deductible_amount'],
+          'contribution_page_id' => $value['contribution_page_id'],
+          'currency' => $value['currency'],
+          'is_test' => $value['is_test'],
+          'is_pay_later' => $value['is_pay_later'],);
     }
     return $params;
   }
 
   function contribution_receipt($contriParams, $firstParams, $contributionid) {
-
     CRM_Core_DAO::commonRetrieveAll('CRM_Contribute_DAO_ContributionPage', 'id', $contriParams['contribution_page_id'], $getInfo, NULL);
     foreach ($getInfo as $Key => $values) {
       unset($values['recur_frequency_unit']);
@@ -766,7 +797,8 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
         </QBMSXML>';
 
     // submit to intuit
-    $response = $this->sendToIntuit($url, $SignonXML, $pem);
+    $gatewayUrl = $url;
+    $response = $this->sendToIntuit($gatewayUrl, $SignonXML, $pem);
     CRM_Core_Error::debug_var('$SignonXML', $response);
     $xml = simplexml_load_string($response);
 
@@ -792,7 +824,7 @@ INNER JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution
     $recurDAO->find();
 
     $pemFile = ($this->_mode == 'live') ? PROD_PEM : TEST_PEM;
-    CRM_Core_Error::debug_var('$mode' , $this->_mode);
+    CRM_Core_Error::debug_var('$mode', $this->_mode);
 
     list($code, $message, $PHP_SessionTicket) = $this->checkSignon($this->_params['applicationLogin'], $this->_params['connectionTicket'], $this->_params['applicationURL'], $pemFile);
 
