@@ -371,7 +371,7 @@ class com_webaccessglobal_Intuit extends CRM_Core_Payment {
 
     CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_Contribution', $params['contributionID'], 'trxn_id', $params['trxn_id']);
     CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_Contribution', $params['contributionID'], 'invoice_id', $params['invoice_id']);
-   // CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_Contribution', $params['contributionID'], 'contribution_status_id', $completed);
+    // CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_Contribution', $params['contributionID'], 'contribution_status_id', $completed);
 
     CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_ContributionRecur', $params['contributionRecurID'], 'processor_id', $params['processor_id']);
     CRM_Core_DAO::setFieldValue('CRM_Contribute_DAO_ContributionRecur', $params['contributionRecurID'], 'trxn_id', $params['trxn_id']);
@@ -420,19 +420,19 @@ class com_webaccessglobal_Intuit extends CRM_Core_Payment {
     }
 
     $today = date('Y-m-d');
-   /* $recurContribution = "
-    SELECT  recur.id, recur.frequency_unit, recur.frequency_interval, recur.payment_instrument_id,recur.contribution_type_id,recur.contribution_status_id,
-            recur.installments, recur.start_date, recur.trxn_id, recur.processor_id, recur.invoice_id, recur.cancel_date, recur.amount,
-            count( contri.contribution_recur_id ) as count_id
-      FROM  civicrm_contribution contri
-RIGHT JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution_recur_id
+    /* $recurContribution = "
+       SELECT  recur.id, recur.frequency_unit, recur.frequency_interval, recur.payment_instrument_id,recur.contribution_type_id,recur.contribution_status_id,
+       recur.installments, recur.start_date, recur.trxn_id, recur.processor_id, recur.invoice_id, recur.cancel_date, recur.amount,
+       count( contri.contribution_recur_id ) as count_id
+       FROM  civicrm_contribution contri
+       RIGHT JOIN  civicrm_contribution_recur recur ON ( recur.id = contri.contribution_recur_id
        AND  recur.is_test = %1
        AND  contri.contribution_status_id = 1
        AND recur.contribution_status_id NOT IN ( 3, 1 )
        AND  recur.payment_processor_id = %2 )
-  GROUP BY  contri.contribution_recur_id";
-  */
-  $recurContribution = "
+       GROUP BY  contri.contribution_recur_id";
+    */
+    $recurContribution = "
     SELECT recur.id, recur.frequency_unit, recur.frequency_interval, recur.payment_instrument_id, recur.contribution_type_id, recur.contribution_status_id, recur.installments, recur.start_date, recur.trxn_id, recur.processor_id, recur.invoice_id, recur.cancel_date, recur.amount, count( contri.contribution_recur_id )  AS count_id
 FROM civicrm_contribution_recur recur
 LEFT  JOIN civicrm_contribution contri ON ( recur.id = contri.contribution_recur_id
@@ -444,14 +444,14 @@ AND recur.payment_processor_id =%2
 GROUP  BY recur.id";
 
     $queryParams = array(1 => array($isTest, 'Integer'),
-      2 => array($defaults['id'], 'Integer'));
+                   2 => array($defaults['id'], 'Integer'));
 
     $recurResult = CRM_Core_DAO::executeQuery($recurContribution, $queryParams);
 
     while ($recurResult->fetch()) {
       CRM_Core_Error::debug_var('$recurResult', $recurResult);
       $firstParams = self::getParams($recurResult->invoice_id);
-     
+
       $nCount = $recurResult->count_id;
       $freqInstall = $recurResult->installments;
 
@@ -494,10 +494,10 @@ GROUP  BY recur.id";
         $xml = simplexml_load_string($response);
 
         if ($xml->QBMSXMLMsgsRs->CustomerCreditCardWalletDelRs['statusCode'] != "0") {
-           self::error($xml->QBMSXMLMsgsRs->CustomerCreditCardWalletDelRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerCreditCardWalletDelRs['statusMessage']);
+          self::error($xml->QBMSXMLMsgsRs->CustomerCreditCardWalletDelRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerCreditCardWalletDelRs['statusMessage']);
         }
         if ($xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusCode'] != "0") {
-           self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusMessage']);
+          self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusMessage']);
         }
 
         $recurResult1 = CRM_Contribute_BAO_ContributionRecur::getRecurContributions($contriParams['contact_id']);
@@ -545,7 +545,7 @@ GROUP  BY recur.id";
 
         $xml = simplexml_load_string($response);
         if ($xml->QBMSXMLMsgsRs->CustomerScheduledBillingPaymentQueryRs['statusCode'] != "0") {
-           self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingPaymentQueryRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingPaymentQueryRs['statusMessage']);
+          self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingPaymentQueryRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingPaymentQueryRs['statusMessage']);
         }
 
         $sheduleBillingResult = self::_parseXML($response);
@@ -595,14 +595,14 @@ GROUP  BY recur.id";
                 $contribution->receive_date = $contriParams['receive_date'];
                 $contribution->contribution_status_id = $contriParams['contribution_status_id'];
                 $contribution->trxn_id = $recurValue['ScheduledBillingPaymentID'];
-          
+
                 $contribution->save();
                 $payCount++;
                 if (!empty($firstParams['address_id'])) {
                   self::contribution_receipt($contriParams, $firstParams, $contribution->id);
                 }
                 CRM_Core_Error::debug_var('process complete', $contribution->id);
-               //	continue;
+                //	continue;
               }
               $payCount++;
             }
@@ -668,11 +668,11 @@ GROUP  BY recur.id";
 
           $xml = simplexml_load_string($response);
           if ($xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusCode'] != "0") {
-             self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusMessage']);
+            self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingDelRs['statusMessage']);
           }
 
           if ($xml->QBMSXMLMsgsRs->CustomerScheduledBillingQueryRs['statusCode'] != "0") {
-             self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingQueryRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingQueryRs['statusMessage']);
+            self::error($xml->QBMSXMLMsgsRs->CustomerScheduledBillingQueryRs['statusCode'], $xml->QBMSXMLMsgsRs->CustomerScheduledBillingQueryRs['statusMessage']);
           }
 
           $recurResult1 = CRM_Contribute_BAO_ContributionRecur::getRecurContributions($contriParams['contact_id']);
@@ -699,22 +699,22 @@ GROUP  BY recur.id";
     CRM_Core_DAO::commonRetrieveAll('CRM_Contribute_DAO_Contribution', 'invoice_id', $invoiceID, $details, NULL);
     $params = array();
     foreach ($details as $key => $value) {
-     
-        $params = array('contact_id' => $value['contact_id'],
-          'contribution_type_id' => $value['contribution_type_id'],
-          'contribution_page_id' => $value['contribution_page_id'],
-          'payment_instrument_id' => $value['payment_instrument_id'],
-          'contribution_recur_id' => $value['contribution_recur_id'],
-          'total_amount' => $value['total_amount'],
-          'trxn_id' => $value['trxn_id'],
-          'address_id' => $value['address_id'],
-          'source' => $value['source'],
-          'contribution_source' => $value['contribution_source'],
-          'non_deductible_amount' => $value['non_deductible_amount'],
-          'contribution_page_id' => $value['contribution_page_id'],
-          'currency' => $value['currency'],
-          'is_test' => $value['is_test'],
-          'is_pay_later' => $value['is_pay_later'],);
+
+      $params = array('contact_id' => $value['contact_id'],
+                'contribution_type_id' => $value['contribution_type_id'],
+                'contribution_page_id' => $value['contribution_page_id'],
+                'payment_instrument_id' => $value['payment_instrument_id'],
+                'contribution_recur_id' => $value['contribution_recur_id'],
+                'total_amount' => $value['total_amount'],
+                'trxn_id' => $value['trxn_id'],
+                'address_id' => $value['address_id'],
+                'source' => $value['source'],
+                'contribution_source' => $value['contribution_source'],
+                'non_deductible_amount' => $value['non_deductible_amount'],
+                'contribution_page_id' => $value['contribution_page_id'],
+                'currency' => $value['currency'],
+                'is_test' => $value['is_test'],
+                'is_pay_later' => $value['is_pay_later'],);
     }
     return $params;
   }
