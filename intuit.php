@@ -2,7 +2,7 @@
 
 require_once 'intuit.civix.php';
 require_once 'Intuitpayment.php';
-require_once 'config.intuit.php';
+
 
 /**
  * Implementation of hook_civicrm_config
