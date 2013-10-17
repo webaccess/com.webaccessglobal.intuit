@@ -223,7 +223,18 @@ class com_webaccessglobal_Intuit extends CRM_Core_Payment {
         $params['invoice_id'] = $PHP_WalletId;
       }
 
-      $tomorrow = date('Y-m-d', mktime(0, 0, 0, date("m"), date("d") + 1, date("Y")));
+      // Checking if date is between 29-31 then
+      // redirect it to 1st of next month.
+      $d = date('d') + 1;
+      $m = date("m");
+
+      if (in_array($d, array(29, 30, 31))) {
+        $d = 1;
+        $m = $m + 1;
+      }
+
+      $installmentStartDate = date('Y-m-d', mktime(0, 0, 0, $m, $d, date("Y")));
+
       if ($params['frequency_unit'] == 'day') {
         $freqInterval = $params['frequency_interval'];
       }
@@ -237,12 +248,10 @@ class com_webaccessglobal_Intuit extends CRM_Core_Payment {
         $freqInterval = $interval;
       }
       else if ($params['frequency_unit'] == 'month') {
-        $d = date("d") + 1;
         $freqInterval = "0 0 0 " . $d . " * ?";
       }
       else if ($params['frequency_unit'] == 'year') {
-        $d = date("d") + 1;
-        $freqInterval = "0 0 0 " . $d . " " . date("m") . " ?";
+        $freqInterval = "0 0 0 " . $d . " " . $m . " ?";
       }
 
       $BillingAdd = '<?xml version="1.0"?>
@@ -260,7 +269,7 @@ class com_webaccessglobal_Intuit extends CRM_Core_Payment {
            <WalletEntryID>' . $PHP_WalletId . '</WalletEntryID>
            <PaymentType>CreditCard</PaymentType>
            <Amount>' . $amount . '</Amount>
-           <StartDate>' . $tomorrow . '</StartDate>
+           <StartDate>' . $installmentStartDate . '</StartDate>
            <FrequencyExpression>' . $freqInterval . '</FrequencyExpression>
            <ScheduledBillingStatus>Active</ScheduledBillingStatus>
          </CustomerScheduledBillingAddRq>
@@ -627,11 +636,13 @@ GROUP  BY recur.id";
 
               $trxn = & CRM_Core_BAO_FinancialTrxn::create($trxnParams);
               $nCount++;
+
+              if (!empty($firstParams['address_id']) && ( date('Y-m-d', strtotime($count, strtotime($recurValue['PaymentDate']))) <= $today) && ($recurValue['ResultStatusCode'] == 0) && ($contribution->thankyou_date == NULL)) {
+                self::contribution_receipt($contriParams, $firstParams, $contribution->id);
+              }
+              CRM_Core_Error::debug_var('process complete', $contribution->id);
             }
-            if (!empty($firstParams['address_id']) && ( date('Y-m-d', strtotime($count, strtotime($recurValue['PaymentDate']))) <= $today) && ($recurValue['ResultStatusCode'] == 0) && ($contribution->thankyou_date == NULL)) {
-              self::contribution_receipt($contriParams, $firstParams, $contribution->id);
-            }
-            CRM_Core_Error::debug_var('process complete', $contribution->id);
+
           }
         }
 
